@@ -226,7 +226,7 @@
         return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
 
-    // 核心計算邏輯 (v2.0 校正版)
+    // 核心計算邏輯 (v2.1 非線性校正版 - 納入自適應 dt 與高核懲罰)
     function calculate() {
         // 讀取當前值
         const cpuType = inputs.cpuType.value;
@@ -242,31 +242,36 @@
         displays.gap.innerText = gapHeight;
         displays.visc.innerText = viscosity.toFixed(2);
 
-        // 1. 計算 dt (預估時間步階)
-        // 校正係數：0.00003 確保在 gap=20, visc=0.22 時，dt 接近 2.73E-04
+        // 1. 計算基準 dt (初始狀態的預估時間步階)
         let base_dt = 0.00003 * gapHeight * Math.sqrt(viscosity);
         let dt = (physicsModel === 'Detail') ? base_dt * 0.25 : base_dt;
 
-        // 2. 計算總迭代次數
-        let total_steps = Math.round(physTime / dt);
+        // 2. 導入「自適應時間步階」效應
+        // 物理時間越長，後期 dt 變大，所需 iterations 不會線性暴增 (次方降為 0.65)
+        let effective_physTime = Math.pow(physTime, 0.65) * 4.5;
+        let total_steps = Math.round(effective_physTime / dt);
 
-        // 3. 計算 CPU 效能常數
+        // 3. 計算 CPU 與物理模型效能常數
         let cpu_factor = (cpuType === 'AMD 9475F') ? 0.85 : 1.0;
+        // Detail 模型在厚度與複雜度提升時，負載懲罰比預期更大
+        if (physicsModel === 'Detail') {
+            cpu_factor *= 2.5; 
+        }
 
-        // 4. 計算平行加速比 (阿姆達爾定律近似)
-        let speedup = Math.pow(cores, 0.85);
+        // 4. 計算平行加速比 (下修阿姆達爾定律指數 0.85 -> 0.70)
+        // 反映 70萬網格用 128核時的強烈通訊損耗
+        let speedup = Math.pow(cores, 0.70);
 
         // 5. 計算總耗時 (秒)
-        // 基礎負載基準：每 100 萬網格
-        // 校正負載常數：26.6 (為了對齊 233萬網格跑 36萬步需 64萬秒的真實數據)
         let base_effort = elements / 1000000.0;
-        let comp_time_sec = (total_steps * base_effort * 26.6 * cpu_factor) / speedup;
+        // 負載常數調整為 42 以對齊新舊資料的均值
+        let comp_time_sec = (total_steps * base_effort * 42 * cpu_factor) / speedup;
 
         // 6. 格式化輸出資料
-        displays.outDt.innerText = dt.toExponential(2).toUpperCase();
-        displays.outSteps.innerText = formatNumber(total_steps);
+        displays.outDt.innerText = dt.toExponential(2).toUpperCase() + " (初態)";
+        displays.outSteps.innerText = formatNumber(total_steps) + " (等效)";
         
-        // 時間轉換 (天、小時)
+        // 時間轉換
         let hours = (comp_time_sec / 3600).toFixed(1);
         let days = (comp_time_sec / 86400).toFixed(2);
         
