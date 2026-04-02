@@ -252,7 +252,7 @@
         let total_steps = Math.round(effective_physTime / dt);
 
         // 3. 計算 CPU 與物理模型效能常數
-        let cpu_factor = (cpuType === 'AMD 9475F') ? 0.85 : 1.0;
+        let cpu_factor = (cpuType === 'AMD 9475F') ? 0.50 : 1.0;
         // Detail 模型在厚度與複雜度提升時，負載懲罰比預期更大
         if (physicsModel === 'Detail') {
             cpu_factor *= 2.5; 
